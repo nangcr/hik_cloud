@@ -3,6 +3,7 @@ package consumer
 import (
 	"errors"
 	"fmt"
+
 	"github.com/Insua/hik_cloud/http"
 	"github.com/gogf/gf/crypto/gsha1"
 	"github.com/gogf/gf/encoding/gjson"
@@ -11,11 +12,11 @@ import (
 )
 
 const (
-	CacheConstomerIdPrefix ="hik_cloud_customer_id_"
+	CacheConstomerIdPrefix = "hik_cloud_customer_id_"
 )
 
 const (
-	createUrl = "https://api2.hik-cloud.com/api/v1/mq/consumer/group1"
+	createUrl  = "https://api2.hik-cloud.com/api/v1/mq/consumer/group1"
 	consumeUrl = "https://api2.hik-cloud.com/api/v1/mq/consumer/messages"
 )
 
@@ -24,8 +25,8 @@ type Consumer struct {
 }
 
 type ConsumeData struct {
-	ConsumerId string `c:"consumerId" json:"consumer_id"` //消费者ID
-	AutoCommit bool `c:"autoCommit, omitempty" json:"auto_commit"` //是否自动提交偏移量，默认false
+	ConsumerId string `c:"consumerId" json:"consumer_id"`            // 消费者ID
+	AutoCommit bool   `c:"autoCommit, omitempty" json:"auto_commit"` // 是否自动提交偏移量，默认false
 }
 
 func NewConsumer(http *http.Http) *Consumer {
@@ -41,16 +42,20 @@ func (c *Consumer) Create() ([]byte, error) {
 	return body, err
 }
 
-func (c *Consumer) Consume(data *ConsumeData) ([]byte,error)  {
+func (c *Consumer) Consume(data *ConsumeData) ([]byte, error) {
 	body, err := c.Http.PostFormUrl(consumeUrl, gconv.Map(data))
 	return body, err
 }
 
-func (c *Consumer) Messages() ([]byte, error)  {
+func (c *Consumer) Messages() ([]byte, error) {
 	customerId := ""
 	cacheValue, getRedisErr := c.Http.Redis.DoVar("GET", c.cacheKey())
 	if getRedisErr == nil && len(gconv.String(cacheValue)) > 0 {
 		customerId = gconv.String(cacheValue)
+		_, setErr := c.Http.Redis.DoVar("EXPIRE", c.cacheKey(), 240)
+		if setErr != nil {
+			return nil, setErr
+		}
 	} else {
 		create, errCreate := c.Create()
 		if errCreate != nil {
@@ -61,6 +66,10 @@ func (c *Consumer) Messages() ([]byte, error)  {
 			customerId = gconv.String(jsonId)
 			if len(customerId) == 32 {
 				_, setErr := c.Http.Redis.DoVar("SET", c.cacheKey(), customerId)
+				if setErr != nil {
+					return nil, setErr
+				}
+				_, setErr = c.Http.Redis.DoVar("EXPIRE", c.cacheKey(), 240)
 				if setErr != nil {
 					return nil, setErr
 				}
@@ -76,7 +85,7 @@ func (c *Consumer) Messages() ([]byte, error)  {
 		AutoCommit: true,
 	}
 
-	consume, consumeErr :=  c.Consume(&data)
+	consume, consumeErr := c.Consume(&data)
 	if consumeErr != nil {
 		return nil, consumeErr
 	}
